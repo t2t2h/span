@@ -1,0 +1,52 @@
+name: Build AflatoonSuite
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          brew install ldid dpkg make || true
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Install Theos
+        run: |
+          git clone --recursive --depth=1 https://github.com/theos/theos.git "$HOME/theos"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+
+      - name: Install iOS SDK
+        run: |
+          mkdir -p "$HOME/theos/sdks"
+          git clone --depth=1 https://github.com/theos/sdks.git /tmp/sdks
+          mv /tmp/sdks/*.sdk "$HOME/theos/sdks/" || true
+
+      - name: Build dylib
+        run: |
+          set -o pipefail
+          make clean || true
+          make FINALPACKAGE=1 2>&1 | tee build.log
+
+      - name: Collect output
+        if: always()
+        run: |
+          mkdir -p out
+          cp build.log out/ || true
+          find . -name "AflatoonSuite.dylib" -not -path "*/arm64/*" -exec cp {} out/ \; || true
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AflatoonSuite
+          path: out/*
+          if-no-files-found: error
